@@ -1,0 +1,27 @@
+[project]
+name = "miniviseo2"
+version = "0.1.0"
+description = "AI Agent Mini Assistant - Personal AI assistant with LLM, MCP tools, and web search"
+requires-python = ">=3.12"
+dependencies = [
+    "openai",
+    "mcp",
+    "python-dotenv",
+    "requests",
+    "pydantic",
+    "fastapi",
+    "uvicorn",
+    "beautifulsoup4",
+    "lxml",
+]
+
+[project.scripts]
+server = "src.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src", "src.*"]
+namespaces = false
+
+[tool.uv]
+package = true
