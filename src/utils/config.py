@@ -39,6 +39,10 @@ class Config:
         """
         MCP 서버 설정 파싱
         
+        우선순위:
+        1. mcp_servers.json 파일
+        2. MCP_SERVERS 환경변수
+        
         Returns:
             MCP 서버 딕셔너리
             {
@@ -48,37 +52,65 @@ class Config:
                 }
             }
         """
-        mcp_servers_str = os.getenv("MCP_SERVERS", "{}")
+        # 1. JSON 파일에서 로드 시도
+        json_file = "mcp_servers.json"
+        if os.path.exists(json_file):
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    servers = json.load(f)
+                    return self._validate_mcp_servers(servers, source="mcp_servers.json")
+            except json.JSONDecodeError as e:
+                print(f"⚠️  경고: {json_file} 파싱 오류: {e}")
+            except Exception as e:
+                print(f"⚠️  경고: {json_file} 읽기 오류: {e}")
         
-        try:
-            servers = json.loads(mcp_servers_str)
-            
-            # 유효성 검증
-            if not isinstance(servers, dict):
-                print("⚠️  경고: MCP_SERVERS가 올바른 딕셔너리 형식이 아닙니다.")
-                return {}
-            
-            # 각 서버 설정 검증
-            validated_servers = {}
-            for name, config in servers.items():
-                if not isinstance(config, dict):
-                    print(f"⚠️  경고: MCP 서버 '{name}'의 설정이 올바르지 않습니다.")
-                    continue
-                
-                if "url" not in config:
-                    print(f"⚠️  경고: MCP 서버 '{name}'에 url이 없습니다.")
-                    continue
-                
-                validated_servers[name] = {
-                    "url": config["url"],
-                    "description": config.get("description", "")
-                }
-            
-            return validated_servers
-            
-        except json.JSONDecodeError as e:
-            print(f"⚠️  경고: MCP_SERVERS JSON 파싱 오류: {e}")
+        # 2. 환경변수에서 로드 시도 (Fallback)
+        mcp_servers_str = os.getenv("MCP_SERVERS", "")
+        if mcp_servers_str:
+            try:
+                servers = json.loads(mcp_servers_str)
+                return self._validate_mcp_servers(servers, source="환경변수")
+            except json.JSONDecodeError as e:
+                print(f"⚠️  경고: MCP_SERVERS 환경변수 파싱 오류: {e}")
+        
+        # 설정 없음
+        return {}
+    
+    def _validate_mcp_servers(self, servers: Any, source: str) -> Dict[str, Dict[str, str]]:
+        """
+        MCP 서버 설정 유효성 검증
+        
+        Args:
+            servers: 서버 설정
+            source: 설정 출처 (로깅용)
+        
+        Returns:
+            검증된 서버 딕셔너리
+        """
+        if not isinstance(servers, dict):
+            print(f"⚠️  경고: {source}의 MCP 서버 설정이 올바른 딕셔너리 형식이 아닙니다.")
             return {}
+        
+        # 각 서버 설정 검증
+        validated_servers = {}
+        for name, config in servers.items():
+            if not isinstance(config, dict):
+                print(f"⚠️  경고: MCP 서버 '{name}'의 설정이 올바르지 않습니다.")
+                continue
+            
+            if "url" not in config:
+                print(f"⚠️  경고: MCP 서버 '{name}'에 url이 없습니다.")
+                continue
+            
+            validated_servers[name] = {
+                "url": config["url"],
+                "description": config.get("description", "")
+            }
+        
+        if validated_servers:
+            print(f"✓ MCP 서버 설정 로드 완료 ({source}): {list(validated_servers.keys())}")
+        
+        return validated_servers
     
     def get_mcp_server(self, name: str) -> Optional[Dict[str, str]]:
         """

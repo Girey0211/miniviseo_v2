@@ -34,8 +34,10 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
-
 # Artifact files
 PRD.md
 tasklist.md
 .gemini/
+
+# MCP Server Configuration
+mcp_servers.json

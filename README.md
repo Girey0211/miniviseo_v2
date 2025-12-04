@@ -51,23 +51,15 @@ uv sync
 cp .env.example .env
 ```
 
-`.env` 파일에 다음 값을 설정:
+`.env` 파일에 OpenAI API 키를 설정:
 
 ```bash
-# OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4o-mini
-
-# MCP Server Configuration (JSON format)
-# 예시: Notion MCP 서버 설정
-MCP_SERVERS={"notion": {"url": "http://localhost:3000", "description": "Notion MCP Server"}}
-
-# 여러 서버 설정 예시
-# MCP_SERVERS={"notion": {"url": "http://localhost:3000", "description": "Notion MCP Server"}, "calendar": {"url": "http://localhost:3001", "description": "Calendar MCP Server"}}
-
-LOG_LEVEL=INFO
-MEMORY_FILE=data/memory.json
 ```
+
+**MCP 서버 설정 (선택사항):**  
+필요한 경우 프로젝트 루트에 `mcp_servers.json` 파일을 생성하여 MCP 서버를 설정할 수 있습니다.
 
 ## 🚀 사용 방법
 
