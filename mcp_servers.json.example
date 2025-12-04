@@ -1,0 +1,10 @@
+{
+  "notion": {
+    "url": "http://localhost:3000",
+    "description": "Notion MCP Server"
+  },
+  "calendar": {
+    "url": "http://localhost:3001",
+    "description": "Calendar MCP Server"
+  }
+}

@@ -58,8 +58,30 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-**MCP 서버 설정 (선택사항):**  
-필요한 경우 프로젝트 루트에 `mcp_servers.json` 파일을 생성하여 MCP 서버를 설정할 수 있습니다.
+### 5. MCP 서버 설정 (선택사항)
+
+MCP(Model Context Protocol) 서버를 사용하려면 `mcp_servers.json.example` 파일을 복사하여 설정합니다:
+
+```bash
+cp mcp_servers.json.example mcp_servers.json
+```
+
+`mcp_servers.json` 파일을 열어 실제 서버 정보로 수정:
+
+```json
+{
+  "notion": {
+    "url": "http://localhost:3000",
+    "description": "Notion MCP Server"
+  },
+  "calendar": {
+    "url": "http://localhost:3001",
+    "description": "Calendar MCP Server"
+  }
+}
+```
+
+> **참고:** MCP 서버 설정은 선택사항입니다. 설정하지 않아도 다른 기능들은 정상적으로 동작합니다.
 
 ## 🚀 사용 방법
 
