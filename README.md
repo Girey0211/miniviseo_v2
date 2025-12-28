@@ -58,28 +58,38 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-### 5. MCP 서버 설정 (선택사항)
-
+### 5. **MCP 서버 설정 (선택사항):**  
 MCP(Model Context Protocol) 서버를 사용하려면 `mcp_servers.json.example` 파일을 복사하여 설정합니다:
 
 ```bash
 cp mcp_servers.json.example mcp_servers.json
 ```
 
-`mcp_servers.json` 파일을 열어 실제 서버 정보로 수정:
+`mcp_servers.json` 파일에서 실제 서버 경로로 수정:
 
 ```json
 {
   "notion": {
-    "url": "http://localhost:3000",
-    "description": "Notion MCP Server"
+    "command": "fastmcp",
+    "args": ["run", "/path/to/notion_server.py"],
+    "description": "Notion MCP Server created with FastMCP"
   },
-  "calendar": {
-    "url": "http://localhost:3001",
-    "description": "Calendar MCP Server"
+  "filesystem": {
+    "command": "python",
+    "args": ["/path/to/server.py"],
+    "description": "Python MCP Server"
   }
 }
 ```
+
+**참고:** 
+- `command`: 서버 실행 명령어 (fastmcp, python, node 등)
+- `args`: 서버 스크립트 경로와 추가 인자
+  - FastMCP: `["run", "server.py"]` 또는 `["dev", "server.py"]`
+  - Python: `["server.py"]`
+  - Node.js: `["server.js"]`
+- MCP 서버는 stdio 기반으로 통신합니다
+- FastMCP로 만든 서버도 완벽하게 호환됩니다
 
 > **참고:** MCP 서버 설정은 선택사항입니다. 설정하지 않아도 다른 기능들은 정상적으로 동작합니다.
 

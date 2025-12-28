@@ -46,26 +46,50 @@ TASK_TYPE_CLASSIFICATION_PROMPT = """사용자의 요청을 분석하여 작업 
 ```
 """
 
-# Tool Selection 프롬프트
-TOOL_SELECTION_PROMPT = """주어진 작업에 가장 적합한 도구를 선택하세요.
+# Tool Selection# 도구 선택 프롬프트
+TOOL_SELECTION_PROMPT = """작업을 수행하기 위한 최적의 도구를 선택하고 파라미터를 생성하세요.
+
+{current_date_info}
+
+[이전 대화 맥락]:
+{context}
 
 작업: {task_description}
 사용 가능한 MCP 도구: {available_mcp_tools}
+{schema_details}
 
-## 도구 선택 기준
-1. LLM 자체 지식으로 가능하면 도구 불필요
+**중요 규칙:**
+1. 작업에 가장 적합한 도구 선택
 2. 외부 데이터/서비스 필요 시 MCP 도구 사용
 3. MCP 도구 없으면 웹 검색
 4. 실시간 정보 필요 시 웹 검색 우선
+
+**파라미터 생성 규칙 (매우 중요!):**
+1. **반드시 위의 "사용 가능한 도구 상세 정보"에 명시된 정확한 파라미터 이름을 사용하세요**
+2. **[필수] 표시된 파라미터는 반드시 모두 포함해야 합니다**
+3. **파라미터 이름을 임의로 변경하거나 추측하지 마세요**
+4. **스키마에 명시된 타입(string, number 등)을 준수하세요**
+5. **날짜는 YYYY-MM-DD 형식, 날짜+시간은 YYYY-MM-DDTHH:MM:SS 형식을 사용하세요**
+6. **"내일", "다음주" 등 상대적 날짜는 위의 현재 날짜 정보를 기준으로 계산하세요**
+7. **날짜/시간은 반드시 한국 시간대(KST, +09:00)를 포함해야 합니다.**
+7. **날짜/시간은 반드시 한국 시간대(KST, +09:00)를 포함해야 합니다.**
+8. **사용자 요청의 세부 정보를 반영하여 의미 있는 값을 생성하세요**
+9. **[중요] 사용자가 "그거", "이전 내용", "검색 결과" 등 문맥을 참조하는 경우, 반드시 [이전 대화 맥락]에서 구체적인 내용을 추출하여 파라미터에 포함하세요. (예: "맛집" -> 실제 찾은 식당 이름들 나열)**
+
+예시:
+- 사용자: "내일 오후 3시에 회의" → `{{"title": "회의", "date": "2025-12-09T15:00:00+09:00"}}`
+- 사용자: "저녁 약속 일정" → `{{"title": "저녁 약속", "date": "2025-12-08T19:00:00+09:00"}}`
+- 스키마에 `event_title`이 있다면 → `{{"event_title": "회의"}}`
+- 임의로 파라미터 이름을 바꾸지 마세요!
 
 다음 형식으로 응답하세요:
 ```json
 {{
   "selected_tool": "llm|mcp|web_search|none",
-  "tool_name": "구체적인 도구 이름 (MCP인 경우)",
+  "tool_name": "구체적인 도구 이름 (예: notion.add_calendar_event)",
   "reasoning": "이 도구를 선택한 이유",
   "params": {{
-    "필요한": "파라미터"
+    "스키마에_명시된_정확한_파라미터_이름": "사용자_요청을_반영한_값"
   }}
 }}
 ```
@@ -76,7 +100,19 @@ MCP_TOOL_PARAM_PROMPT = """MCP 도구 호출을 위한 파라미터를 생성하
 
 도구 이름: {tool_name}
 도구 설명: {tool_description}
+
+## 파라미터 스키마 (각 파라미터의 설명을 주의 깊게 읽으세요!)
+{parameter_schema}
+
 사용자 요청: {user_request}
+
+## 중요 지침
+1. **파라미터의 설명(description)을 보고 가장 적절한 필드에 데이터를 넣으세요.**
+    - 검색 결과나 요약 내용이 있다면, 이를 담을 수 있는 필드(예: `description`, `body`, `content`, `summary` 등)를 찾아 상세히 기록하세요.
+    - 단순히 "검색 결과"라고 쓰지 말고, 실제로 검색된 **모든 중요한 세부 정보**를 포함하세요.
+2. 날짜/시간 포맷: **반드시 한국 시간대(KST, +09:00)를 포함하세요.** (예: 2024-01-01T10:00:00+09:00)
+3. 누락된 정보가 있다면 사용자 요청 내에서 합리적으로 추론하거나 기본값을 사용하세요.
+4. **[중요] "저장해줘", "메모해줘" 등의 요청 시, 사용자가 가리키는 대상(예: 검색된 맛집 목록)을 [이전 단계 실행 결과]나 [이전 대화 맥락]에서 찾아 상세히 기술하세요.**
 
 파라미터를 JSON 형식으로 생성하세요:
 ```json
@@ -131,15 +167,19 @@ RESULT_SYNTHESIS_PROMPT = """여러 단계의 결과를 통합하여 최종 응�
 MEMORY_SAVE_PROMPT = """사용자가 정보를 기억해달라고 요청했는지 판단하세요.
 
 사용자 요청: {user_input}
+[이전 대화 맥락]:
+{context}
 
 "기억해", "저장해", "메모해" 등의 명시적 요청이 있는지 확인하세요.
+
+**중요**: "그거", "방금 검색한 거" 등 대명사를 사용하는 경우, **[이전 대화 맥락]에서 구체적인 내용을 찾아 `memory_value`에 저장하세요.** (예: "방금 찾은 맛집" -> "A식당, B식당, C식당")
 
 다음 형식으로 응답하세요:
 ```json
 {{
   "should_save": true/false,
   "memory_key": "저장할 키",
-  "memory_value": "저장할 값",
+  "memory_value": "저장할 값 (문맥에서 추출한 구체적 내용)",
   "reasoning": "판단 이유"
 }}
 ```
@@ -223,13 +263,55 @@ def get_task_type_prompt(user_input: str) -> str:
     return format_prompt(TASK_TYPE_CLASSIFICATION_PROMPT, user_input=user_input)
 
 
-def get_tool_selection_prompt(task_description: str, available_mcp_tools: list) -> str:
+def get_tool_selection_prompt(task_description: str, available_mcp_tools: list, tools_schema: dict = None, context: str = "") -> str:
     """Tool selection 프롬프트 생성"""
+    from datetime import datetime
+    
     tools_str = ", ".join(available_mcp_tools) if available_mcp_tools else "없음"
+    
+    # 현재 날짜 정보
+    now = datetime.now()
+    current_date_info = f"""
+현재 날짜 및 시간 (KST): {now.strftime('%Y-%m-%d %H:%M:%S')}
+- 오늘: {now.strftime('%Y-%m-%d')}
+- 현재 시각: {now.strftime('%H:%M')}
+- 시간대: Asia/Seoul (+09:00)
+"""
+    
+    # 도구 스키마 정보를 상세하게 포맷팅
+    schema_details = ""
+    if tools_schema:
+        schema_details = "\n\n## 사용 가능한 도구 상세 정보:\n"
+        for tool_key, schema in tools_schema.items():
+            schema_details += f"\n### {tool_key}\n"
+            schema_details += f"- 설명: {schema.get('description', '설명 없음')}\n"
+            
+            input_schema = schema.get('inputSchema', {})
+            if input_schema:
+                schema_details += f"- 파라미터:\n"
+                properties = input_schema.get('properties', {})
+                required = input_schema.get('required', [])
+                
+                for prop_name, prop_info in properties.items():
+                    is_required = "**필수**" if prop_name in required else "선택"
+                    prop_type = prop_info.get('type', 'any')
+                    prop_desc = prop_info.get('description', '')
+                    default_val = prop_info.get('default', '')
+                    
+                    param_line = f"  - `{prop_name}` ({prop_type}) [{is_required}]"
+                    if prop_desc:
+                        param_line += f": {prop_desc}"
+                    if default_val:
+                        param_line += f" (기본값: {default_val})"
+                    schema_details += param_line + "\n"
+            
     return format_prompt(
         TOOL_SELECTION_PROMPT,
         task_description=task_description,
-        available_mcp_tools=tools_str
+        available_mcp_tools=tools_str,
+        current_date_info=current_date_info,
+        schema_details=schema_details,
+        context=context
     )
 
 
@@ -243,11 +325,22 @@ def get_result_synthesis_prompt(user_input: str, execution_steps: list) -> str:
     )
 
 
-def get_memory_save_prompt(user_input: str) -> str:
+def get_memory_save_prompt(user_input: str, context: str = "") -> str:
     """Memory save 판단 프롬프트 생성"""
-    return format_prompt(MEMORY_SAVE_PROMPT, user_input=user_input)
+    return format_prompt(MEMORY_SAVE_PROMPT, user_input=user_input, context=context)
 
 
 def get_task_decomposition_prompt(user_input: str) -> str:
     """Task decomposition 프롬프트 생성"""
     return format_prompt(TASK_DECOMPOSITION_PROMPT, user_input=user_input)
+
+
+def get_mcp_tool_param_prompt(tool_name: str, tool_description: str, parameter_schema: str, user_request: str) -> str:
+    """MCP tool param generation 프롬프트 생성"""
+    return format_prompt(
+        MCP_TOOL_PARAM_PROMPT,
+        tool_name=tool_name,
+        tool_description=tool_description,
+        parameter_schema=parameter_schema,
+        user_request=user_request
+    )

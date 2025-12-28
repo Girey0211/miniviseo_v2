@@ -158,7 +158,9 @@ class AgentPlanner:
     def select_tools(
         self,
         task_description: str,
-        available_mcp_tools: List[str] = None
+        available_mcp_tools: List[str] = None,
+        tools_schema: Dict[str, Dict[str, Any]] = None,
+        conversation_history: str = ""
     ) -> Dict[str, Any]:
         """
         도구 선택
@@ -166,6 +168,7 @@ class AgentPlanner:
         Args:
             task_description: 작업 설명
             available_mcp_tools: 사용 가능한 MCP 도구 목록
+            tools_schema: MCP 도구 스키마 정보
         
         Returns:
             도구 선택 결과
@@ -181,8 +184,11 @@ class AgentPlanner:
         if available_mcp_tools is None:
             available_mcp_tools = []
         
+        if tools_schema is None:
+            tools_schema = {}
+        
         try:
-            prompt = get_tool_selection_prompt(task_description, available_mcp_tools)
+            prompt = get_tool_selection_prompt(task_description, available_mcp_tools, tools_schema, conversation_history)
             result = self.openai_client.query_with_json(
                 system_prompt=get_system_prompt(),
                 user_message=prompt
@@ -190,7 +196,14 @@ class AgentPlanner:
             
             if result:
                 selected = result.get("selected_tool", "llm")
+                tool_name = result.get("tool_name", "")
+                params = result.get("params", {})
+                
                 logger.info(f"도구 선택 완료: {selected}")
+                if tool_name:
+                    logger.info(f"선택된 도구 이름: {tool_name}")
+                logger.info(f"생성된 파라미터: {params}")
+                
                 return result
             else:
                 logger.warning("도구 선택 실패, LLM 사용")
@@ -260,7 +273,9 @@ class AgentPlanner:
     def create_execution_plan(
         self,
         user_input: str,
-        available_mcp_tools: List[str] = None
+        available_mcp_tools: List[str] = None,
+        tools_schema: Dict[str, Dict[str, Any]] = None,
+        conversation_history: str = ""
     ) -> ExecutionPlan:
         """
         실행 계획 생성
@@ -268,6 +283,7 @@ class AgentPlanner:
         Args:
             user_input: 사용자 입력
             available_mcp_tools: 사용 가능한 MCP 도구 목록
+            tools_schema: MCP 도구 스키마 정보
         
         Returns:
             ExecutionPlan 객체
@@ -301,7 +317,7 @@ class AgentPlanner:
         
         elif task_type == TaskType.TOOL_REQUIRED:
             # 도구 필요: 도구 선택 후 실행
-            tool_selection = self.select_tools(user_input, available_mcp_tools)
+            tool_selection = self.select_tools(user_input, available_mcp_tools, tools_schema, conversation_history)
             steps.append({
                 "step": 1,
                 "action": "tool_call",

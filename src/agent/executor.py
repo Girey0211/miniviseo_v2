@@ -9,7 +9,7 @@ from enum import Enum
 
 from src.utils.logger import setup_logger, log_chain_step
 from src.utils.openai_client import get_openai_client
-from src.prompts import get_system_prompt
+from src.prompts import get_system_prompt, get_tool_selection_prompt, get_mcp_tool_param_prompt
 from src.agent.planner import ExecutionPlan, TaskType
 
 logger = setup_logger("chain_executor")
@@ -165,10 +165,15 @@ class ChainExecutor:
         system_prompt = get_system_prompt()
         
         # 컨텍스트가 있으면 추가
+        user_message = ""
+        
+        if context and context.get("conversation_history"):
+            user_message += f"[이전 대화 맥락]:\n{context['conversation_history']}\n\n"
+
         if context and context.get("previous_results"):
-            user_message = f"이전 단계 결과:\n{context['previous_results']}\n\n사용자 요청: {user_input}"
-        else:
-            user_message = user_input
+             user_message += f"이전 단계 결과:\n{context['previous_results']}\n\n"
+             
+        user_message += f"사용자 요청: {user_input}"
         
         response = self.openai_client.simple_query(system_prompt, user_message)
         return response
@@ -185,6 +190,95 @@ class ChainExecutor:
         tool_name = step.get("tool_name", "")
         params = step.get("params", {})
         
+        # 도구 이름이 없거나 유효하지 않은 경우 JIT(Just-In-Time) 도구 선택 수행
+        if not tool_name or tool_name.strip() == "":
+            logger.warning("MCP 도구 이름 누락, JIT 도구 선택 시작")
+            
+            # 1. 사용 가능한 도구 목록 조회
+            available_mcp_tools = []
+            mcp_client = self.tool_router.mcp_client
+            for server_name in mcp_client.list_servers():
+                tools = mcp_client.get_available_tools(server_name)
+                available_mcp_tools.extend([f"{server_name}.{tool}" for tool in tools])
+            
+            # 2. 도구 스키마 조회
+            tools_schema = mcp_client.get_all_tools_schema()
+            
+            # 3. 컨텍스트를 포함한 작업 설명 생성
+            task_desc = f"사용자 요청: {user_input}\n"
+            if context and context.get("previous_results"):
+                task_desc += f"\n이전 단계 결과 (참고하여 파라미터 생성):\n"
+                for idx, res in enumerate(context["previous_results"]):
+                    task_desc += f"[{idx+1}] {res}\n"
+            
+            step_desc = step.get("description", "")
+            if step_desc:
+                task_desc += f"\n현재 단계 목표: {step_desc}"
+            
+            # 4. LLM에게 도구 선택 요청
+            prompt = get_tool_selection_prompt(task_desc, available_mcp_tools, tools_schema)
+            selection_result = self.openai_client.query_with_json(
+                system_prompt=get_system_prompt(),
+                user_message=prompt
+            )
+            
+            if selection_result:
+                tool_name = selection_result.get("tool_name", "")
+                params = selection_result.get("params", {})
+                logger.info(f"JIT 도구 선택 완료: {tool_name}, 파라미터: {params}")
+            else:
+                logger.error("JIT 도구 선택 실패")
+                raise Exception("MCP 도구 이름을 결정할 수 없습니다.")
+        
+        # 5. 문맥(Context) 기반 파라미터 재생성 (Contextual Parameter Injection)
+        # 도구 이름이 확정되었고, 이전 단계의 결과(Context)가 있다면 파라미터를 더 정교하게 다듬습니다.
+        elif context and (context.get("previous_results") or context.get("conversation_history")) and tool_name:
+            logger.info(f"이전 단계 결과 존재, 파라미터 재생성 시도: {tool_name}")
+            try:
+                # 도구 정보 가져오기
+                mcp_client = self.tool_router.mcp_client
+                server_name = tool_name.split(".")[0]
+                tool_short_name = tool_name.split(".")[1]
+                
+                # 스키마 및 설명 조회
+                schema = mcp_client.get_tool_schema(server_name, tool_short_name)
+                tool_description = schema.get("description", "") if schema else "설명 없음"
+                
+                # 파라미터 스키마 포맷팅 (설명 포함)
+                schema_str = ""
+                input_schema = schema.get("inputSchema", {}) if schema else {}
+                if input_schema:
+                    properties = input_schema.get("properties", {})
+                    for prop_name, prop_info in properties.items():
+                        prop_type = prop_info.get("type", "any")
+                        prop_desc = prop_info.get("description", "설명 없음")
+                        schema_str += f"- {prop_name} ({prop_type}): {prop_desc}\n"
+                
+                # 프롬프트 구성: 사용자 요청 + 이전 결과
+                enhanced_input = f"사용자 원본 요청: {user_input}\n\n"
+                
+                if context.get("conversation_history"):
+                    enhanced_input += f"[이전 대화 맥락 (중요 참고)]:\n{context['conversation_history']}\n\n"
+
+                if context.get("previous_results"):
+                    enhanced_input += f"[이전 단계 실행 결과 (반드시 반영할 것)]:\n"
+                    for idx, res in enumerate(context["previous_results"]):
+                        enhanced_input += f"[{idx+1}] {res}\n"
+                
+                # LLM 요청
+                param_prompt = get_mcp_tool_param_prompt(tool_name, tool_description, schema_str, enhanced_input)
+                new_params = self.openai_client.query_with_json(
+                    system_prompt=get_system_prompt(),
+                    user_message=param_prompt
+                )
+                
+                if new_params:
+                    logger.info(f"파라미터 재생성 완료: {new_params}")
+                    params = new_params
+                
+            except Exception as e:
+                logger.warning(f"파라미터 재생성 중 오류 (기존 파라미터 사용): {e}")
+
         # Tool Router를 통해 호출
         result = self.tool_router.route_tool_call("mcp", tool_name, params, user_input)
         
@@ -223,7 +317,8 @@ class ChainExecutor:
     def execute_chain(
         self,
         plan: ExecutionPlan,
-        user_input: str
+        user_input: str,
+        conversation_history: str = None
     ) -> Dict[str, Any]:
         """
         전체 체인 실행
@@ -244,7 +339,10 @@ class ChainExecutor:
         logger.info(f"체인 실행 시작: {len(plan.steps)}단계")
         
         self.execution_history = []
-        context = {"previous_results": []}
+        context = {
+            "previous_results": [],
+            "conversation_history": conversation_history
+        }
         
         for step in plan.steps:
             result = self.execute_step(step, user_input, context)

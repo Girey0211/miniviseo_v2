@@ -41,7 +41,6 @@ class Config:
         
         우선순위:
         1. mcp_servers.json 파일
-        2. MCP_SERVERS 환경변수
         
         Returns:
             MCP 서버 딕셔너리
@@ -98,17 +97,22 @@ class Config:
                 print(f"⚠️  경고: MCP 서버 '{name}'의 설정이 올바르지 않습니다.")
                 continue
             
-            if "url" not in config:
-                print(f"⚠️  경고: MCP 서버 '{name}'에 url이 없습니다.")
+            # command 필드 필수
+            if "command" not in config:
+                print(f"⚠️  경고: MCP 서버 '{name}'에 command가 없습니다.")
                 continue
             
             validated_servers[name] = {
-                "url": config["url"],
+                "command": config["command"],
+                "args": config.get("args", []),
                 "description": config.get("description", "")
             }
         
         if validated_servers:
-            print(f"✓ MCP 서버 설정 로드 완료 ({source}): {list(validated_servers.keys())}")
+            print(f"✓ MCP 서버 설정 로드 완료 ({source}):")
+            for name, cfg in validated_servers.items():
+                cmd_str = f"{cfg['command']} {' '.join(cfg.get('args', []))}"
+                print(f"  - {name}: {cmd_str}")
         
         return validated_servers
     

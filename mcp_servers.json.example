@@ -1,10 +1,17 @@
 {
   "notion": {
-    "url": "http://localhost:3000",
-    "description": "Notion MCP Server"
+    "command": "fastmcp",
+    "args": ["run", "/path/to/notion_server.py"],
+    "description": "Notion MCP Server created with FastMCP"
   },
-  "calendar": {
-    "url": "http://localhost:3001",
-    "description": "Calendar MCP Server"
+  "example_python": {
+    "command": "python",
+    "args": ["/path/to/server.py"],
+    "description": "Python MCP Server"
+  },
+  "example_fastmcp_dev": {
+    "command": "fastmcp",
+    "args": ["dev", "/path/to/server.py"],
+    "description": "FastMCP server in dev mode"
   }
 }

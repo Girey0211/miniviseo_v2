@@ -69,8 +69,9 @@ class ToolRouter:
                 return None
         
         # 서버 연결 확인 및 연결
-        if server_name not in self.mcp_client.connected_servers:
-            self.mcp_client.connect_server(server_name)
+        if server_name not in self.mcp_client.sessions:
+            logger.warning(f"MCP 서버 {server_name}에 연결되어 있지 않습니다.")
+            return None
         
         # 도구 호출
         result = self.mcp_client.call_tool(server_name, actual_tool_name, params)

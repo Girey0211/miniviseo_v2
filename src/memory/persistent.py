@@ -55,18 +55,19 @@ class PersistentMemory:
         self.storage.remove_long_term_memory(key)
         logger.info(f"장기 메모리 삭제: {key}")
     
-    def analyze_and_remember(self, user_input: str) -> Optional[Dict[str, Any]]:
+    def analyze_and_remember(self, user_input: str, context: str = "") -> Optional[Dict[str, Any]]:
         """
         사용자 입력을 분석하여 필요한 경우 기억하기
         
         Args:
             user_input: 사용자 입력
+            context: 대화 맥락
         
         Returns:
             저장된 정보 또는 None
         """
         try:
-            prompt = get_memory_save_prompt(user_input)
+            prompt = get_memory_save_prompt(user_input, context)
             result = self.openai_client.query_with_json(
                 system_prompt="당신은 사용자의 중요한 정보를 기억하는 메모리 관리자입니다.",
                 user_message=prompt

@@ -46,16 +46,31 @@ class AIAgent:
             self.session_memory.add_message("user", user_input)
             
             # 1. 장기 메모리 자동 저장 분석
-            saved_memory = self.persistent_memory.analyze_and_remember(user_input)
+            # 대화 이력을 조회 (최근 10개 턴)
+            conversation_history = self.session_memory.get_context_string(limit=10)
+            saved_memory = self.persistent_memory.analyze_and_remember(user_input, conversation_history)
             if saved_memory:
                 logger.info(f"중요 정보 저장됨: {saved_memory}")
             
             # 2. 실행 계획 수립
-            # TODO: 세션 컨텍스트와 장기 메모리를 프롬프트에 포함해야 함
-            plan = self.planner.create_execution_plan(user_input)
+            # MCP 클라이언트에서 사용 가능한 도구 목록 및 스키마 가져오기
+            available_mcp_tools = []
+            mcp_client = self.executor.tool_router.mcp_client
+            for server_name in mcp_client.list_servers():
+                tools = mcp_client.get_available_tools(server_name)
+                # 서버 이름과 도구 이름을 조합하여 전달 (예: "notion.create_page")
+                available_mcp_tools.extend([f"{server_name}.{tool}" for tool in tools])
+            
+            # 도구 스키마 정보 가져오기
+            tools_schema = mcp_client.get_all_tools_schema()
+            
+            logger.info(f"사용 가능한 MCP 도구: {available_mcp_tools}")
+            # conversation_history는 위에서 조회됨
+            plan = self.planner.create_execution_plan(user_input, available_mcp_tools, tools_schema, conversation_history)
             
             # 3. 체인 실행
-            execution_result = self.executor.execute_chain(plan, user_input)
+            # conversation_history는 위에서 이미 조회됨
+            execution_result = self.executor.execute_chain(plan, user_input, conversation_history)
             
             # 4. 결과 통합 및 응답 생성
             final_response = self.synthesizer.synthesize(user_input, execution_result)

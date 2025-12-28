@@ -35,26 +35,58 @@ def setup_logger(name: str = "agent", log_level: str = None) -> logging.Logger:
     if logger.handlers:
         return logger
     
+    # 색상 코드 정의
+    class ColoredFormatter(logging.Formatter):
+        """색상이 있는 로그 포맷터"""
+        
+        COLORS = {
+            'DEBUG': '\033[36m',      # 청록색
+            'INFO': '\033[32m',       # 초록색
+            'WARNING': '\033[33m',    # 노란색
+            'ERROR': '\033[31m',      # 빨간색
+            'CRITICAL': '\033[35m',   # 자홍색
+            'RESET': '\033[0m'        # 리셋
+        }
+        
+        def format(self, record):
+            # 레벨에 따라 색상 적용
+            levelname = record.levelname
+            if levelname in self.COLORS:
+                colored_levelname = f"{self.COLORS[levelname]}{levelname}{self.COLORS['RESET']}"
+                record.levelname = colored_levelname
+            
+            result = super().format(record)
+            
+            # 원래 레벨 이름으로 복원 (다른 핸들러를 위해)
+            record.levelname = levelname
+            
+            return result
+    
     # 포맷 설정
-    formatter = logging.Formatter(
+    colored_formatter = ColoredFormatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # 콘솔 핸들러
+    plain_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # 콘솔 핸들러 (색상 있음)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(level)
-    console_handler.setFormatter(formatter)
+    console_handler.setFormatter(colored_formatter)
     logger.addHandler(console_handler)
     
-    # 파일 핸들러
+    # 파일 핸들러 (색상 없음)
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
     log_file = log_dir / f"{name}_{datetime.now().strftime('%Y%m%d')}.log"
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setLevel(level)
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(plain_formatter)
     logger.addHandler(file_handler)
     
     return logger

@@ -15,6 +15,7 @@ from .templates import (
     get_result_synthesis_prompt,
     get_memory_save_prompt,
     get_task_decomposition_prompt,
+    get_mcp_tool_param_prompt,
     format_prompt
 )
 
@@ -31,5 +32,6 @@ __all__ = [
     'get_result_synthesis_prompt',
     'get_memory_save_prompt',
     'get_task_decomposition_prompt',
+    'get_mcp_tool_param_prompt',
     'format_prompt'
 ]
