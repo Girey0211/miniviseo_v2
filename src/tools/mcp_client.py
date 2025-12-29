@@ -11,6 +11,7 @@ from contextlib import AsyncExitStack
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.sse import sse_client
 
 from src.utils.config import config
 from src.utils.logger import setup_logger
@@ -40,7 +41,10 @@ class MCPClient:
                 cmd_str = f"{cmd} {args}".strip()
                 desc = server_config.get('description', 'No description')
                 logger.info(f"  - {name}: {cmd_str} ({desc})")
-            logger.info("MCP 서버는 첫 사용 시 자동으로 연결됩니다.")
+            
+            # 모든 서버에 비동기 연결 및 도구 목록 조회 시작
+            logger.info("모든 승인된 MCP 서버에 연결을 시도하고 도구 목록을 조회합니다...")
+            asyncio.run_coroutine_threadsafe(self._connect_all_servers(), self._loop)
         else:
             logger.info("설정된 MCP 서버가 없습니다.")
     
@@ -85,32 +89,73 @@ class MCPClient:
         logger.info(f"MCP 서버 연결 시도: {server_name}")
         
         try:
-            # 서버 설정에서 command와 args 가져오기
-            command = server_config.get("command")
-            args = server_config.get("args", [])
+            # 서버 타입 감지 (url이 있으면 HTTP, command가 있으면 stdio)
+            server_type = server_config.get("type")
+            if not server_type:
+                # type이 명시되지 않은 경우 자동 감지
+                if "url" in server_config:
+                    server_type = "http"
+                elif "command" in server_config:
+                    server_type = "stdio"
+                else:
+                    logger.error(f"서버 {server_name}에 'url' 또는 'command'가 설정되지 않았습니다.")
+                    return False
             
-            if not command:
-                logger.error(f"서버 {server_name}에 command가 설정되지 않았습니다.")
+            logger.info(f"서버 타입: {server_type}")
+            
+            # 서버 타입에 따라 다른 연결 방식 사용
+            if server_type == "http":
+                # HTTP/SSE 연결
+                url = server_config.get("url")
+                if not url:
+                    logger.error(f"서버 {server_name}에 url이 설정되지 않았습니다.")
+                    return False
+                
+                logger.info(f"HTTP 연결 시도: {url}")
+                
+                # SSE 클라이언트로 HTTP 연결
+                sse_transport = await self.exit_stack.enter_async_context(
+                    sse_client(url)
+                )
+                read, write = sse_transport
+                
+                # 클라이언트 세션 생성 및 초기화
+                session = await self.exit_stack.enter_async_context(
+                    ClientSession(read, write)
+                )
+                await session.initialize()
+                
+            elif server_type == "stdio":
+                # Stdio 연결
+                command = server_config.get("command")
+                args = server_config.get("args", [])
+                
+                if not command:
+                    logger.error(f"서버 {server_name}에 command가 설정되지 않았습니다.")
+                    return False
+                
+                # Stdio 서버 파라미터 설정
+                server_params = StdioServerParameters(
+                    command=command,
+                    args=args,
+                    env=None
+                )
+                
+                # Stdio 클라이언트로 전송 채널 생성
+                stdio_transport = await self.exit_stack.enter_async_context(
+                    stdio_client(server_params)
+                )
+                stdio, write = stdio_transport
+                
+                # 클라이언트 세션 생성 및 초기화
+                session = await self.exit_stack.enter_async_context(
+                    ClientSession(stdio, write)
+                )
+                await session.initialize()
+                
+            else:
+                logger.error(f"지원하지 않는 서버 타입: {server_type}")
                 return False
-            
-            # Stdio 서버 파라미터 설정
-            server_params = StdioServerParameters(
-                command=command,
-                args=args,
-                env=None
-            )
-            
-            # Stdio 클라이언트로 전송 채널 생성
-            stdio_transport = await self.exit_stack.enter_async_context(
-                stdio_client(server_params)
-            )
-            stdio, write = stdio_transport
-            
-            # 클라이언트 세션 생성 및 초기화
-            session = await self.exit_stack.enter_async_context(
-                ClientSession(stdio, write)
-            )
-            await session.initialize()
             
             # 세션 저장
             self.sessions[server_name] = session
@@ -121,21 +166,8 @@ class MCPClient:
             
             logger.info(f"MCP 서버 연결 성공: {server_name}, 도구: {tools}")
             
-            # 각 도구의 스키마를 상세하게 로그
-            logger.info(f"=== {server_name} 서버 도구 스키마 상세 정보 ===")
-            for tool in response.tools:
-                logger.info(f"\n도구: {tool.name}")
-                logger.info(f"  설명: {tool.description if hasattr(tool, 'description') else 'N/A'}")
-                if hasattr(tool, 'inputSchema'):
-                    schema = tool.inputSchema
-                    logger.info(f"  입력 스키마: {schema}")
-                    if isinstance(schema, dict):
-                        props = schema.get('properties', {})
-                        required = schema.get('required', [])
-                        logger.info(f"  필수 파라미터: {required}")
-                        for prop_name, prop_info in props.items():
-                            logger.info(f"    - {prop_name}: {prop_info}")
-            logger.info(f"=== 스키마 정보 끝 ===\n")
+            # 각 도구의 스키마를 상세하게 로그하지 않고, 위에서 이미 리스트로 로깅함
+            # logger.info(f"MCP 서버 연결 성공: {server_name}, 도구: {tools}")
             
             return True
             
@@ -159,6 +191,16 @@ class MCPClient:
     async def cleanup(self):
         """리소스 정리"""
         await self.exit_stack.aclose()
+    
+    async def _connect_all_servers(self):
+        """모든 설정된 서버에 연결하고 도구 목록을 로깅"""
+        for name in self.servers_config:
+            try:
+                # 연결 및 도구 목록 가져오기 (이미 get_available_tools 내부에서 로깅함)
+                # _get_available_tools_async는 연결도 수행함
+                await self._get_available_tools_async(name)
+            except Exception as e:
+                logger.error(f"서버 {name} 초기화 중 오류: {e}")
     
     def get_available_tools(self, server_name: str = None) -> List[str]:
         """
@@ -220,9 +262,7 @@ class MCPClient:
                     "description": tool.description if hasattr(tool, 'description') else "",
                     "inputSchema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
                 }
-                logger.info(f"도구 스키마 저장: {tool_key}")
-                logger.info(f"  설명: {self._tools_schema[tool_key]['description']}")
-                logger.info(f"  스키마: {self._tools_schema[tool_key]['inputSchema']}")
+                # 상세 스키마 로깅 제거
             
             logger.info(f"서버 {server_name}에서 {len(tools)}개 도구 발견: {tools}")
             return tools

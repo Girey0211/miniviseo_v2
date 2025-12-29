@@ -97,22 +97,48 @@ class Config:
                 print(f"⚠️  경고: MCP 서버 '{name}'의 설정이 올바르지 않습니다.")
                 continue
             
-            # command 필드 필수
-            if "command" not in config:
-                print(f"⚠️  경고: MCP 서버 '{name}'에 command가 없습니다.")
-                continue
+            # 서버 타입 결정
+            server_type = config.get("type")
+            if not server_type:
+                # 자동 감지
+                if "url" in config:
+                    server_type = "http"
+                elif "command" in config:
+                    server_type = "stdio"
+                else:
+                    print(f"⚠️  경고: MCP 서버 '{name}'의 설정을 판별할 수 없습니다. (command 또는 url 필요)")
+                    continue
             
-            validated_servers[name] = {
-                "command": config["command"],
-                "args": config.get("args", []),
+            validated_config = {
+                "type": server_type,
                 "description": config.get("description", "")
             }
+            
+            if server_type == "http":
+                if "url" not in config:
+                    print(f"⚠️  경고: HTTP 서버 '{name}'에 url이 없습니다.")
+                    continue
+                validated_config["url"] = config["url"]
+                # HTTP 헤더 등 추가 옵션 처리 가능
+                
+            else: # stdio
+                if "command" not in config:
+                    print(f"⚠️  경고: Stdio 서버 '{name}'에 command가 없습니다.")
+                    continue
+                validated_config["command"] = config["command"]
+                validated_config["args"] = config.get("args", [])
+                # 환경변수 등 처리 가능
+            
+            validated_servers[name] = validated_config
         
         if validated_servers:
             print(f"✓ MCP 서버 설정 로드 완료 ({source}):")
             for name, cfg in validated_servers.items():
-                cmd_str = f"{cfg['command']} {' '.join(cfg.get('args', []))}"
-                print(f"  - {name}: {cmd_str}")
+                if cfg["type"] == "http":
+                    print(f"  - {name}: HTTP → {cfg['url']}")
+                else:
+                    cmd_str = f"{cfg['command']} {' '.join(cfg.get('args', []))}"
+                    print(f"  - {name}: {cmd_str}")
         
         return validated_servers
     

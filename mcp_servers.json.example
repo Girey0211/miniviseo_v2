@@ -13,5 +13,10 @@
     "command": "fastmcp",
     "args": ["dev", "/path/to/server.py"],
     "description": "FastMCP server in dev mode"
+  },
+  "example_http_server": {
+    "type": "http",
+    "url": "http://localhost:8000/sse",
+    "description": "HTTP MCP Server (SSE transport)"
   }
 }
